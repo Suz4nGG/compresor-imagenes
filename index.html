@@ -1,0 +1,1406 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Comprime carpetas completas de imágenes JPG, PNG o WebP en el navegador: calidad, ancho máximo, comparador antes/después y descarga en ZIP.">
+<title>Compresor de Imágenes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: mesa de trabajo en dos paneles — ajustes fijos a la izquierda, bitácora de resultados a la derecha; una sola columna bajo 880px */
+:root {
+  --bg: #eef0f5;
+  --panel: #ffffff;
+  --panel-2: #f5f6fa;
+  --ink: #141821;
+  --muted: #5a6274;
+  --line: #dadee8;
+  --line-strong: #b9bfcd;
+  --accent: #2a49d4;
+  --accent-ink: #ffffff;
+  --accent-soft: #e5eafd;
+  --good: #16784a;
+  --good-soft: #dcf1e5;
+  --warn: #8d5900;
+  --warn-soft: #f8ecd2;
+  --bad: #b2261e;
+  --bad-soft: #fae2df;
+  --scrim: rgba(14, 18, 28, 0.55);
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1117; --panel: #161a22; --panel-2: #1c212b; --ink: #e7eaf1; --muted: #99a1b3;
+    --line: #2a303c; --line-strong: #3d4555; --accent: #8fa3ff; --accent-ink: #0e1117; --accent-soft: #222a49;
+    --good: #5fd39b; --good-soft: #14301f; --warn: #f1c05c; --warn-soft: #33270e; --bad: #ff8b80; --bad-soft: #3b1a17;
+    --scrim: rgba(0, 0, 0, 0.65);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1117; --panel: #161a22; --panel-2: #1c212b; --ink: #e7eaf1; --muted: #99a1b3;
+  --line: #2a303c; --line-strong: #3d4555; --accent: #8fa3ff; --accent-ink: #0e1117; --accent-soft: #222a49;
+  --good: #5fd39b; --good-soft: #14301f; --warn: #f1c05c; --warn-soft: #33270e; --bad: #ff8b80; --bad-soft: #3b1a17;
+  --scrim: rgba(0, 0, 0, 0.65);
+  color-scheme: dark;
+}
+
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 24px;
+}
+
+/* Encabezado */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 40px; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.mark { width: 44px; height: 44px; flex: none; border-radius: 12px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.tagline { margin: 2px 0 0; color: var(--muted); font-size: 13px; font-family: var(--font-mono); }
+.lede { margin: 0; max-width: 54ch; color: var(--muted); }
+
+/* Mesa de trabajo */
+.work { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 880px) { .work { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; }
+.controls { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+@media (max-width: 880px) { .controls { position: static; } }
+
+.sec { padding: 20px; display: grid; gap: 12px; }
+.sec + .sec { border-top: 1px solid var(--line); }
+.label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.help { margin: 0; font-size: 13px; color: var(--muted); }
+
+/* Zona de carga */
+.drop {
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 12px;
+  padding: 22px 16px;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+  background: var(--panel-2);
+  transition: border-color .15s, background-color .15s;
+}
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop svg { color: var(--accent); }
+.drop-title { margin: 0; font-weight: 600; font-size: 16px; }
+.drop-sub { margin: 0; font-size: 13px; color: var(--muted); }
+.drop-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 4px; }
+.loaded { display: grid; gap: 4px; justify-items: center; }
+.loaded strong { font-family: var(--font-mono); font-weight: 500; font-size: 14px; overflow-wrap: anywhere; }
+.loaded span { font-size: 13px; color: var(--muted); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 38px; padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  font-weight: 600; font-size: 14px;
+  cursor: pointer;
+  transition: border-color .15s, background-color .15s;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.link { border: 0; background: none; padding: 0 4px; min-height: 0; color: var(--accent); font-weight: 600; }
+.btn.primary {
+  width: 100%; min-height: 50px; font-size: 16px;
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+}
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn.primary.stop { background: var(--panel); color: var(--bad); border-color: var(--bad); }
+
+/* Calidad */
+.qual-head { display: flex; align-items: baseline; justify-content: space-between; }
+.qual-val { font-family: var(--font-display); font-weight: 800; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+.qual-val small { font-size: 14px; font-weight: 600; color: var(--muted); margin-left: 2px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 13px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.chip:hover { border-color: var(--line-strong); }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.chip b { font-weight: 600; }
+
+.width-row { display: flex; align-items: center; gap: 8px; }
+.num {
+  width: 120px; min-height: 38px; padding: 0 10px;
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--panel);
+  font-family: var(--font-mono); font-size: 14px;
+}
+.unit { color: var(--muted); font-size: 14px; }
+
+/* Controles segmentados */
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line-strong); border-radius: 10px; padding: 3px; gap: 3px; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { text-align: center; padding: 6px 8px; border-radius: 7px; cursor: pointer; font-size: 14px; font-weight: 500; }
+.seg input:checked + label { background: var(--accent); color: var(--accent-ink); }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg input:disabled + label { opacity: .45; cursor: not-allowed; }
+
+.opts { display: grid; gap: 8px; }
+.opt { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.opt input { margin: 3px 0 0; accent-color: var(--accent); }
+.opt-title { font-weight: 600; font-size: 14px; }
+.opt-ex { display: block; font-family: var(--font-mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+.check input { margin: 3px 0 0; accent-color: var(--accent); }
+
+.cli {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Resultados */
+.results { display: grid; gap: 0; min-width: 0; container-type: inline-size; }
+.res-head { padding: 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.res-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+h2 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: -0.015em; }
+.tag { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 2px 9px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+.tag.bad { background: var(--bad-soft); color: var(--bad); }
+.res-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.note { margin: 0 20px 4px; padding: 10px 14px; border-radius: 10px; font-size: 14px; background: var(--panel-2); color: var(--muted); }
+.note.warn { background: var(--warn-soft); color: var(--warn); }
+.dl-note { display: grid; gap: 10px; }
+.dl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.dl-actions:not(:has(> :not([hidden]))) { display: none; }
+.btn.small { min-height: 32px; padding: 0 12px; font-size: 13px; }
+a.btn { color: var(--ink); text-decoration: none; }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 16px 20px 20px; }
+.stat { display: grid; gap: 2px; min-width: 0; }
+.stat .v { font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.stat .s { font-size: 12px; color: var(--muted); }
+.stat.hero .v { font-weight: 800; font-size: 40px; line-height: 1; color: var(--good); letter-spacing: -0.02em; }
+
+.progress { padding: 0 20px 16px; display: grid; gap: 6px; }
+.track { height: 6px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+.track i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.progress span { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.rows-head, .row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 170px 68px;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 20px;
+}
+.rows-head { padding-block: 8px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.rows-head span:last-child { text-align: right; }
+.rows { list-style: none; margin: 0; padding: 0 0 8px; }
+.row { border-top: 1px solid var(--line); }
+.thumb {
+  width: 56px; height: 56px; padding: 0;
+  border-radius: 9px; border: 1px solid var(--line);
+  background: var(--panel-2);
+  overflow: hidden; cursor: zoom-in;
+  display: grid; place-items: center;
+}
+.thumb:disabled { cursor: default; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-ph { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.names { display: grid; gap: 2px; min-width: 0; }
+.out { font-family: var(--font-mono); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.in { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.in.err { color: var(--bad); }
+.sizes { display: grid; gap: 6px; min-width: 0; }
+.sz { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar { height: 6px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--good); }
+.bar.warn i { background: var(--warn); }
+.pill {
+  justify-self: end;
+  font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--panel-2); color: var(--muted);
+  white-space: nowrap;
+}
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.busy { background: var(--accent-soft); color: var(--accent); }
+@container (max-width: 620px) {
+  .rows-head { display: none; }
+  .row { grid-template-columns: 48px minmax(0, 1fr) auto; grid-template-areas: "t n p" "t s s"; gap: 6px 12px; padding: 12px 16px; }
+  .thumb { grid-area: t; width: 48px; height: 48px; align-self: start; }
+  .names { grid-area: n; }
+  .sizes { grid-area: s; }
+  .pill { grid-area: p; align-self: start; }
+  .res-head, .stats, .progress { padding-left: 16px; padding-right: 16px; }
+  .note { margin-left: 16px; margin-right: 16px; }
+}
+@container (max-width: 520px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Comparador */
+dialog {
+  width: min(1100px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--ink);
+}
+dialog::backdrop { background: var(--scrim); }
+.cmp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.cmp-head h3 { margin: 0; font-family: var(--font-mono); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
+.cmp-body { padding: 16px 18px 18px; display: grid; gap: 12px; }
+.cmp-legend { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cmp-legend b { color: var(--ink); font-weight: 600; }
+.stage-wrap { overflow: auto; max-height: 68vh; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); }
+.stage {
+  position: relative;
+  width: min(100%, calc(66vh * var(--arn, 1.5)));
+  max-width: 100%;
+  aspect-ratio: var(--ar, 3 / 2);
+  touch-action: none;
+  cursor: ew-resize;
+  user-select: none;
+  margin: 0 auto;
+  --pos: 50%;
+}
+.stage.real { width: var(--real-w); max-width: none; }
+.stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.stage .before { clip-path: inset(0 calc(100% - var(--pos)) 0 0); z-index: 1; }
+.stage .divider { position: absolute; top: 0; bottom: 0; left: var(--pos); width: 2px; margin-left: -1px; background: var(--accent); z-index: 2; }
+.stage .divider::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border-radius: 50%; background: var(--accent); border: 3px solid var(--panel);
+}
+.cmp-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.cmp-foot input[type="range"] { flex: 1 1 220px; }
+
+/* Aviso flotante */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  z-index: 10;
+}
+.toast.bad { background: var(--bad); color: var(--panel); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h5V4"/><path d="M20 15h-5v5"/><path d="M9 9 3 3"/><path d="m15 15 6 6"/></svg>
+      </div>
+      <div>
+        <h1>Compresor de Imágenes</h1>
+        <p class="tagline">versión web de CompresorImagenes</p>
+      </div>
+    </div>
+    <p class="lede">Carga una carpeta, elige la calidad y el ancho máximo, y descarga las imágenes comprimidas. Todo se procesa en tu navegador: las fotos no se suben a ningún servidor.</p>
+  </header>
+
+  <main class="work">
+    <aside class="controls panel" aria-label="Ajustes">
+      <section class="sec">
+        <p class="label">Origen</p>
+        <div class="drop" id="drop">
+          <div id="dropEmpty" class="loaded">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M12 11v5"/><path d="m9.5 13.5 2.5-2.5 2.5 2.5"/></svg>
+            <p class="drop-title">Arrastra una carpeta aquí</p>
+            <p class="drop-sub">JPG, PNG o WebP · incluye subcarpetas</p>
+          </div>
+          <div id="dropReading" class="loaded" hidden>
+            <p class="drop-title">Leyendo carpeta…</p>
+          </div>
+          <div id="dropLoaded" class="loaded" hidden>
+            <strong id="srcName"></strong>
+            <span id="srcMeta"></span>
+          </div>
+          <div class="drop-actions">
+            <button type="button" class="btn" id="pickDirBtn">Elegir carpeta</button>
+            <button type="button" class="btn" id="pickFilesBtn">Elegir imágenes</button>
+            <button type="button" class="btn link" id="clearBtn" hidden>Quitar</button>
+          </div>
+        </div>
+        <input type="file" id="pickDir" webkitdirectory directory multiple hidden>
+        <input type="file" id="pickFiles" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple hidden>
+      </section>
+
+      <section class="sec">
+        <div class="qual-head">
+          <label class="label" for="quality">Calidad</label>
+          <span class="qual-val"><output id="qualityOut" for="quality">75</output><small>/100</small></span>
+        </div>
+        <input type="range" id="quality" min="1" max="100" step="1" value="75">
+        <div class="chips" role="group" aria-label="Calidades sugeridas">
+          <button type="button" class="chip" data-q="60"><b>60</b> ligera</button>
+          <button type="button" class="chip" data-q="75"><b>75</b> web</button>
+          <button type="button" class="chip" data-q="85"><b>85</b> alta</button>
+          <button type="button" class="chip" data-q="95"><b>95</b> máxima</button>
+        </div>
+      </section>
+
+      <section class="sec">
+        <label class="label" for="maxWidth">Ancho máximo</label>
+        <div class="width-row">
+          <input type="number" class="num" id="maxWidth" min="16" max="20000" step="1" inputmode="numeric" placeholder="Sin límite">
+          <span class="unit">px</span>
+        </div>
+        <div class="chips" role="group" aria-label="Anchos sugeridos">
+          <button type="button" class="chip" data-w="1280">1280</button>
+          <button type="button" class="chip" data-w="1920">1920</button>
+          <button type="button" class="chip" data-w="2560">2560</button>
+          <button type="button" class="chip" data-w="">Sin límite</button>
+        </div>
+        <p class="help">Solo se reducen las imágenes más anchas; la altura se ajusta en proporción.</p>
+      </section>
+
+      <section class="sec">
+        <p class="label" id="fmtLabel">Formato de salida</p>
+        <div class="seg" role="radiogroup" aria-labelledby="fmtLabel">
+          <input type="radio" name="fmt" id="fmtJpeg" value="jpeg"><label for="fmtJpeg">JPG</label>
+          <input type="radio" name="fmt" id="fmtWebp" value="webp"><label for="fmtWebp">WebP</label>
+        </div>
+        <p class="help" id="fmtHelp">JPG sirve en cualquier lugar. WebP pesa menos y lo aceptan todos los navegadores actuales.</p>
+      </section>
+
+      <section class="sec">
+        <p class="label" id="nameLabel">Nombres de salida</p>
+        <div class="opts" role="radiogroup" aria-labelledby="nameLabel">
+          <label class="opt">
+            <input type="radio" name="naming" id="nameFlat" value="flat">
+            <span><span class="opt-title">Una sola carpeta</span><span class="opt-ex" id="exFlat"></span></span>
+          </label>
+          <label class="opt">
+            <input type="radio" name="naming" id="nameTree" value="tree">
+            <span><span class="opt-title">Conservar subcarpetas</span><span class="opt-ex" id="exTree"></span></span>
+          </label>
+        </div>
+        <label class="check"><input type="checkbox" id="keepIfLarger"><span>Si la versión comprimida pesa más, conservar el original</span></label>
+      </section>
+
+      <section class="sec">
+        <button type="button" class="btn primary" id="runBtn" disabled>Carga una carpeta</button>
+        <div class="label-row">
+          <p class="label">Equivalente en terminal</p>
+          <button type="button" class="btn link" id="cliCopy">Copiar</button>
+        </div>
+        <pre class="cli" id="cli"></pre>
+        <p class="help" id="cliNote" hidden>El binario solo genera JPG en una sola carpeta.</p>
+      </section>
+    </aside>
+
+    <section class="results panel" aria-labelledby="resTitle">
+      <div class="res-head">
+        <div class="res-title">
+          <h2 id="resTitle">Resultado</h2>
+          <span class="tag" id="exampleTag">Ejemplo</span>
+          <span class="tag bad" id="errorsTag" hidden></span>
+        </div>
+        <div class="res-actions">
+          <button type="button" class="btn" id="folderBtn" hidden>Guardar en carpeta…</button>
+          <button type="button" class="btn" id="zipBtn" disabled>Descargar ZIP</button>
+        </div>
+      </div>
+      <p class="note" id="exampleNote">Así quedó <b>banners-orlando</b> con CompresorImagenes y ancho máximo 1920 px: cuatro PNG de 1.8 MB pasaron a JPG de unos 136 KB. Carga una carpeta para comprimir la tuya.</p>
+      <p class="note warn" id="staleNote" hidden>Cambiaste la calidad, el ancho o el formato. Vuelve a comprimir para aplicarlos.</p>
+      <p class="note" id="ignoredNote" hidden></p>
+      <div class="note warn dl-note" id="dlNote" role="alert" hidden>
+        <span id="dlNoteText"></span>
+        <span class="dl-actions">
+          <button type="button" class="btn small" id="dlEnable" hidden>Permitir descargas</button>
+          <button type="button" class="btn small" id="dlReload" hidden>Recargar</button>
+          <button type="button" class="btn small" id="dlOneByOne" hidden>Descargar una por una</button>
+          <a class="btn small" id="dlOpenTab" href="https://claude.ai/artifact/KEJgwX83QDZimjvBfvPuqW" target="_blank" rel="noopener" hidden>Abrir en el navegador</a>
+        </span>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><span class="label">Imágenes</span><span class="v" id="statCount">0</span><span class="s" id="statCountSub"></span></div>
+        <div class="stat"><span class="label">Antes</span><span class="v" id="statBefore">—</span><span class="s" id="statBeforeSub"></span></div>
+        <div class="stat"><span class="label">Después</span><span class="v" id="statAfter">—</span><span class="s" id="statAfterSub"></span></div>
+        <div class="stat hero"><span class="label">Ahorro</span><span class="v" id="statSaved">—</span><span class="s" id="statSavedSub"></span></div>
+      </div>
+
+      <div class="progress" id="progress" hidden>
+        <div class="track"><i id="progressBar"></i></div>
+        <span id="progressText"></span>
+      </div>
+
+      <div class="rows-head" aria-hidden="true"><span></span><span>Archivo de salida</span><span>Peso</span><span>Ahorro</span></div>
+      <ul class="rows" id="rows"></ul>
+    </section>
+  </main>
+</div>
+
+<dialog id="cmp" aria-labelledby="cmpTitle">
+  <div class="cmp-head">
+    <h3 id="cmpTitle"></h3>
+    <button type="button" class="btn" id="cmpClose">Cerrar</button>
+  </div>
+  <div class="cmp-body">
+    <div class="cmp-legend">
+      <span>Izquierda · <b>original</b> <span id="cmpA"></span></span>
+      <span>Derecha · <b>comprimida</b> <span id="cmpB"></span></span>
+    </div>
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <img class="before" id="imgBefore" alt="Imagen original">
+        <img class="after" id="imgAfter" alt="Imagen comprimida">
+        <span class="divider" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="cmp-foot">
+      <input type="range" id="cmpPos" min="0" max="100" value="50" aria-label="Posición del divisor">
+      <label class="check"><input type="checkbox" id="cmpReal"><span>Ver a tamaño real</span></label>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+  // --- Formato de números ---
+  const nf1 = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 });
+  const nf0 = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 0 });
+  function fmtBytes(b) {
+    if (b < 1024) return nf0.format(b) + ' B';
+    const kb = b / 1024;
+    if (kb < 1024) return (kb < 100 ? nf1 : nf0).format(kb) + ' KB';
+    const mb = kb / 1024;
+    if (mb < 1024) return (mb < 100 ? nf1 : nf0).format(mb) + ' MB';
+    return nf1.format(mb / 1024) + ' GB';
+  }
+  const plural = (n, one, many) => `${nf0.format(n)} ${n === 1 ? one : many}`;
+  const extOf = (name) => { const m = /\.[^.]+$/.exec(name); return m ? m[0].toLowerCase() : ''; };
+  const stemOf = (name) => name.replace(/\.[^.]+$/, '');
+
+  // --- Entorno ---
+  const framed = (() => { try { return window.self !== window.top; } catch { return true; } })();
+  const canWebp = (() => {
+    try { const c = document.createElement('canvas'); c.width = c.height = 1; return c.toDataURL('image/webp').startsWith('data:image/webp'); }
+    catch { return false; }
+  })();
+  const canPickFolder = !framed && typeof window.showDirectoryPicker === 'function';
+  let downloadsPromise = null;
+  function downloads() {
+    if (!downloadsPromise) {
+      downloadsPromise = (window.claude && typeof window.claude.use === 'function')
+        ? window.claude.use('downloads').catch(() => null)
+        : Promise.resolve(null);
+    }
+    return downloadsPromise;
+  }
+  let dlApi = null;
+  let dlChecked = false;
+  let dlProblem = null;   // { text, oneByOne?, openTab? } — último problema al descargar
+  let downloading = false;
+  // Dentro de un visor sin descargas no hay forma de bajar nada: se avisa desde el inicio.
+  const noDownloadsHere = () => framed && dlChecked && !dlApi;
+  let permsApi = null;
+  let dlPerm = null;      // estado del permiso de descargas cuando el visor no las entrega
+  downloads().then(async (d) => {
+    dlApi = d;
+    if (!d && framed && window.claude && typeof window.claude.use === 'function') {
+      try {
+        permsApi = await window.claude.use('permissions');
+        if (permsApi) dlPerm = await permsApi.state('downloads');
+      } catch { /* sin panel de permisos */ }
+    }
+    dlChecked = true;
+    renderActions();
+    renderNotes();
+  });
+
+  async function enableDownloads() {
+    if (!permsApi) return;
+    try {
+      if (dlPerm === 'prompt') dlPerm = (await permsApi.request(['downloads'])).downloads;
+      else { await permsApi.manage(); dlPerm = await permsApi.state('downloads'); }
+    } catch {
+      toast('No se pudo abrir el panel de permisos. Ábrelo desde el menú Permisos del artifact.', 'bad');
+    }
+    renderNotes();
+  }
+
+  // --- Ajustes (se recuerdan en este navegador) ---
+  const DEFAULTS = { quality: 75, maxWidth: 1920, format: 'jpeg', naming: 'flat', keepIfLarger: true };
+  const STORE_KEY = 'compresor-imagenes.ajustes';
+  const settings = (() => {
+    let s = {};
+    try { s = JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch { s = {}; }
+    const out = { ...DEFAULTS };
+    const q = Math.round(Number(s.quality));
+    if (q >= 1 && q <= 100) out.quality = q;
+    if (s.maxWidth === null) out.maxWidth = null;
+    else if (Number(s.maxWidth) >= 16) out.maxWidth = Math.round(Number(s.maxWidth));
+    if (s.format === 'webp' && canWebp) out.format = 'webp';
+    if (s.naming === 'tree') out.naming = 'tree';
+    if (typeof s.keepIfLarger === 'boolean') out.keepIfLarger = s.keepIfLarger;
+    return out;
+  })();
+  function saveSettings() { try { localStorage.setItem(STORE_KEY, JSON.stringify(settings)); } catch { /* sin almacenamiento */ } }
+  const runKey = (s) => [s.quality, s.maxWidth || 0, s.format, s.keepIfLarger].join('|');
+
+  // --- Ejemplo inicial: resultado real de CompresorImagenes sobre banners-orlando ---
+  const EXAMPLE_ROOT = 'banners-orlando';
+  const EXAMPLE = [
+    ['EN', 1845601, 139726], ['ES', 1859445, 139215], ['FR', 1859248, 139682], ['PT', 1868160, 138692],
+  ].map(([lang, a, b], i) => ({
+    id: -1 - i, example: true, status: 'done',
+    rel: [`${lang}-Medida Banner Orlando.png`], parent: EXAMPLE_ROOT,
+    size: a, outSize: b, inW: 2294, inH: 551, outW: 1920, outH: 461,
+    outPath: `${EXAMPLE_ROOT}_${lang}-Medida_Banner_Orlando.jpg`,
+  }));
+
+  // --- Estado ---
+  let items = [];
+  let rootName = '';
+  let ignored = 0;
+  let running = false;
+  let cancelRequested = false;
+  let lastRunKey = null;
+  let nextId = 1;
+  const rowEls = new Map();
+
+  const isExample = () => items.length === 0;
+  const viewItems = () => (isExample() ? EXAMPLE : items);
+  const isFinished = (it) => it.status === 'done' || it.status === 'kept';
+  const sizeOf = (it) => (it.file ? it.file.size : it.size);
+  const outSizeOf = (it) => (it.outBlob ? it.outBlob.size : it.outSize);
+  const outFolder = () => `${isExample() ? EXAMPLE_ROOT : rootName}-compressed`;
+
+  // --- Carga de archivos ---
+  const IMG_RE = /\.(jpe?g|png|webp)$/i;
+  function acceptable(path) {
+    const name = path[path.length - 1];
+    if (name.startsWith('.') || path.includes('__MACOSX')) return false;
+    return IMG_RE.test(name);
+  }
+
+  function setSource(records, fallbackName) {
+    const recs = records.filter((r) => acceptable(r.path));
+    const skipped = records.filter((r) => !r.path[r.path.length - 1].startsWith('.') && !r.path.includes('__MACOSX')).length - recs.length;
+    if (!recs.length) {
+      showReading(false);
+      renderSource();
+      toast('No encontré imágenes JPG, PNG o WebP en lo que cargaste.', 'bad');
+      return;
+    }
+    const first = recs[0].path[0];
+    const shared = recs.every((r) => r.path.length > 1 && r.path[0] === first);
+    clearItems();
+    rootName = shared ? first : (fallbackName || 'imagenes');
+    ignored = skipped;
+    recs.sort((a, b) => a.path.join('/').localeCompare(b.path.join('/'), 'es', { numeric: true }));
+    items = recs.map((r) => ({
+      id: nextId++,
+      file: r.file,
+      rel: shared ? r.path.slice(1) : r.path,
+      parent: r.path.length > 1 ? r.path[r.path.length - 2] : null,
+      status: 'pending',
+    }));
+    lastRunKey = null;
+    showReading(false);
+    assignNames();
+    renderAll();
+  }
+
+  function clearItems() {
+    for (const it of items) if (it.thumbUrl) URL.revokeObjectURL(it.thumbUrl);
+    items = [];
+    rootName = '';
+    ignored = 0;
+    lastRunKey = null;
+    dlProblem = null;
+  }
+
+  function fromFileList(list) {
+    return Array.from(list).map((f) => ({
+      file: f,
+      path: (f.webkitRelativePath || f.name).split('/').filter(Boolean),
+    }));
+  }
+
+  async function fromDataTransfer(dt) {
+    const entries = Array.from(dt.items || [])
+      .filter((i) => i.kind === 'file')
+      .map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null))
+      .filter(Boolean);
+    if (!entries.length) return { records: fromFileList(dt.files || []), name: null };
+    const out = [];
+    const readAll = (reader) => new Promise((res, rej) => reader.readEntries(res, rej));
+    async function walk(entry, prefix) {
+      if (entry.isFile) {
+        const file = await new Promise((res, rej) => entry.file(res, rej));
+        out.push({ file, path: [...prefix, entry.name] });
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        let batch;
+        do {
+          batch = await readAll(reader);
+          for (const e of batch) await walk(e, [...prefix, entry.name]);
+        } while (batch.length);
+      }
+    }
+    for (const e of entries) await walk(e, []);
+    const name = entries.length === 1 && entries[0].isDirectory ? entries[0].name : null;
+    return { records: out, name };
+  }
+
+  // --- Nombres de salida ---
+  // Igual que CompresorImagenes: "<carpeta>_<nombre>.jpg" con los espacios cambiados por "_".
+  function outExtFor(it) {
+    if (it.status === 'kept') return extOf(it.file.name);
+    const fmt = it.outType || settings.format;
+    return fmt === 'webp' ? '.webp' : '.jpg';
+  }
+  function outPathFor(it, naming, ext) {
+    const stem = stemOf(it.rel[it.rel.length - 1]);
+    if (naming === 'flat') {
+      return { dir: '', base: (it.parent ? `${it.parent}_${stem}` : stem).replace(/ /g, '_'), ext };
+    }
+    return { dir: it.rel.slice(0, -1).join('/'), base: stem, ext };
+  }
+  function assignNames() {
+    const used = new Set();
+    for (const it of items) {
+      const { dir, base, ext } = outPathFor(it, settings.naming, outExtFor(it));
+      const prefix = dir ? dir + '/' : '';
+      let name = base + ext;
+      for (let n = 2; used.has((prefix + name).toLowerCase()); n++) name = `${base}-${n}${ext}`;
+      used.add((prefix + name).toLowerCase());
+      it.outPath = prefix + name;
+    }
+  }
+
+  // --- Compresión (canvas) ---
+  function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  function toBlob(c, type, q) {
+    return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('El navegador no pudo codificar la imagen.'))), type, q));
+  }
+
+  async function compress(file, s) {
+    let bmp;
+    try { bmp = await createImageBitmap(file); }
+    catch { throw new Error('No se pudo leer la imagen. Puede estar dañada o en un formato no compatible.'); }
+    const w = bmp.width, h = bmp.height;
+    let tw = w, th = h;
+    if (s.maxWidth && w > s.maxWidth) { tw = s.maxWidth; th = Math.max(1, Math.round(h * s.maxWidth / w)); }
+
+    // Reducción por mitades para que el resultado no se vea pixelado.
+    let src = bmp, sw = w, sh = h;
+    const temps = [];
+    while (sw / 2 >= tw) {
+      const nw = Math.round(sw / 2), nh = Math.max(1, Math.round(sh / 2));
+      const c = makeCanvas(nw, nh);
+      const x = c.getContext('2d');
+      x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+      x.drawImage(src, 0, 0, nw, nh);
+      temps.push(c); src = c; sw = nw; sh = nh;
+    }
+    const type = s.format === 'webp' ? 'image/webp' : 'image/jpeg';
+    const out = makeCanvas(tw, th);
+    const ctx = out.getContext('2d');
+    if (type === 'image/jpeg') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, tw, th); } // JPG no tiene transparencia
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, tw, th);
+    bmp.close();
+    for (const c of temps) { c.width = c.height = 0; }
+    const blob = await toBlob(out, type, s.quality / 100);
+
+    const k = Math.min(1, 112 / Math.min(tw, th));
+    const tc = makeCanvas(Math.max(1, Math.round(tw * k)), Math.max(1, Math.round(th * k)));
+    const tx = tc.getContext('2d');
+    tx.imageSmoothingQuality = 'high';
+    tx.drawImage(out, 0, 0, tc.width, tc.height);
+    const thumb = await toBlob(tc, 'image/jpeg', 0.8);
+    out.width = out.height = tc.width = tc.height = 0;
+    return { blob, w, h, tw, th, thumb, type: s.format };
+  }
+
+  async function run() {
+    if (running) { cancelRequested = true; renderRunButton(); return; }
+    if (!items.length) return;
+    running = true;
+    cancelRequested = false;
+    dlProblem = null;
+    const s = { ...settings };
+    for (const it of items) {
+      if (it.thumbUrl) URL.revokeObjectURL(it.thumbUrl);
+      Object.assign(it, { status: 'pending', outBlob: null, thumbUrl: null, outType: null, err: null, encodedSize: null, outW: null, outH: null });
+    }
+    assignNames();
+    renderAll();
+    const queue = items.slice();
+    let idx = 0;
+    const lanes = Math.min(3, queue.length);
+    await Promise.all(Array.from({ length: lanes }, async () => {
+      while (idx < queue.length && !cancelRequested) {
+        const it = queue[idx++];
+        it.status = 'working';
+        updateRow(it); renderStats();
+        try {
+          const r = await compress(it.file, s);
+          Object.assign(it, { inW: r.w, inH: r.h, thumbUrl: URL.createObjectURL(r.thumb), outType: r.type });
+          if (s.keepIfLarger && r.blob.size >= it.file.size) {
+            Object.assign(it, { status: 'kept', outBlob: it.file, encodedSize: r.blob.size, outW: r.w, outH: r.h });
+          } else {
+            Object.assign(it, { status: 'done', outBlob: r.blob, outW: r.tw, outH: r.th });
+          }
+        } catch (e) {
+          it.status = 'error';
+          it.err = (e && e.message) || String(e);
+        }
+        updateRow(it); renderStats();
+      }
+    }));
+    if (cancelRequested) for (const it of items) if (it.status === 'pending') it.status = 'skipped';
+    running = false;
+    cancelRequested = false;
+    lastRunKey = runKey(s);
+    assignNames();
+    renderAll();
+    const done = items.filter(isFinished).length;
+    const errs = items.filter((i) => i.status === 'error').length;
+    toast(errs ? `Listo: ${plural(done, 'imagen', 'imágenes')}, ${plural(errs, 'error', 'errores')}.` : `Listo: ${plural(done, 'imagen comprimida', 'imágenes comprimidas')}.`);
+  }
+
+  // --- ZIP (método STORE: las imágenes ya vienen comprimidas) ---
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(u8) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  function dosDateTime(d) {
+    return {
+      time: (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2),
+      date: ((Math.max(1980, d.getFullYear()) - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(),
+    };
+  }
+  async function buildZip(entries) {
+    const enc = new TextEncoder();
+    const { time, date } = dosDateTime(new Date());
+    const parts = [], central = [];
+    let offset = 0, centralSize = 0;
+    for (const e of entries) {
+      const data = new Uint8Array(await e.blob.arrayBuffer());
+      const crc = crc32(data);
+      const name = enc.encode(e.name);
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true);
+      lh.setUint16(4, 20, true);
+      lh.setUint16(6, 0x0800, true); // nombres en UTF-8
+      lh.setUint16(8, 0, true);
+      lh.setUint16(10, time, true);
+      lh.setUint16(12, date, true);
+      lh.setUint32(14, crc, true);
+      lh.setUint32(18, data.length, true);
+      lh.setUint32(22, data.length, true);
+      lh.setUint16(26, name.length, true);
+      lh.setUint16(28, 0, true);
+      parts.push(lh.buffer, name, data);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true);
+      ch.setUint16(4, 20, true);
+      ch.setUint16(6, 20, true);
+      ch.setUint16(8, 0x0800, true);
+      ch.setUint16(10, 0, true);
+      ch.setUint16(12, time, true);
+      ch.setUint16(14, date, true);
+      ch.setUint32(16, crc, true);
+      ch.setUint32(20, data.length, true);
+      ch.setUint32(24, data.length, true);
+      ch.setUint16(28, name.length, true);
+      ch.setUint16(30, 0, true);
+      ch.setUint16(32, 0, true);
+      ch.setUint16(34, 0, true);
+      ch.setUint16(36, 0, true);
+      ch.setUint32(38, 0, true);
+      ch.setUint32(42, offset, true);
+      central.push(ch.buffer, name);
+      centralSize += 46 + name.length;
+      offset += 30 + name.length + data.length;
+    }
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(4, 0, true);
+    end.setUint16(6, 0, true);
+    end.setUint16(8, entries.length, true);
+    end.setUint16(10, entries.length, true);
+    end.setUint32(12, centralSize, true);
+    end.setUint32(16, offset, true);
+    end.setUint16(20, 0, true);
+    return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+  }
+  // --- fin ZIP ---
+
+  // --- Descargas ---
+  const DL_NONE = 'Esta vista de Claude no permite descargar archivos, así que desde aquí no se puede bajar el resultado. Abre el compresor en una pestaña del navegador.';
+  const LIFECYCLE = ['unavailable', 'not_granted', 'capability_disabled', 'capability_removed'];
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Traduce el rechazo de downloads.save() a un aviso fijo en la página.
+  function handleSaveError(e, what) {
+    const code = (e && e.code) || 'unavailable';
+    if (code === 'declined') { toast('Descarga cancelada.'); return; }
+    if (code === 'rate_limited') { toast('Ya hay una descarga esperando tu confirmación. Acéptala o espera un momento.'); return; }
+    if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+      dlProblem = { text: 'Esta vista no permite descargar archivos .zip. Puedes bajar las imágenes una por una; te pedirá confirmar cada una.', oneByOne: what === 'zip' };
+    } else if (code === 'too_large') {
+      dlProblem = { text: 'El ZIP es demasiado grande para esta vista. Baja las imágenes una por una o comprime menos a la vez.', oneByOne: what === 'zip' };
+    } else if (LIFECYCLE.includes(code)) {
+      dlProblem = { text: `${DL_NONE} (código: ${code})`, openTab: true };
+    } else {
+      dlProblem = { text: `No se pudo descargar (código: ${code}${e && e.message ? ' · ' + e.message : ''}).`, oneByOne: what === 'zip' };
+    }
+  }
+
+  async function downloadZip() {
+    const list = items.filter(isFinished);
+    if (!list.length || downloading) return;
+    downloading = true;
+    dlProblem = null;
+    renderNotes();
+    const btn = $('#zipBtn');
+    btn.disabled = true;
+    btn.textContent = 'Preparando ZIP…';
+    try {
+      const folder = outFolder();
+      const blob = await buildZip(list.map((it) => ({ name: `${folder}/${it.outPath}`, blob: it.outBlob })));
+      const filename = `${folder}.zip`;
+      const dl = await downloads();
+      if (dl) {
+        btn.textContent = 'Confirma la descarga…';
+        try {
+          await dl.save({ filename, data: blob });
+          toast(`Descargado: ${filename}`);
+        } catch (e) {
+          handleSaveError(e, 'zip');
+        }
+      } else if (!framed) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        toast(`Descargado: ${filename}`);
+      } else {
+        dlProblem = { text: DL_NONE, openTab: true };
+      }
+    } catch (e) {
+      dlProblem = { text: `No se pudo armar el ZIP (${(e && e.message) || e}). Prueba bajando las imágenes una por una.`, oneByOne: true };
+    } finally {
+      downloading = false;
+      renderActions();
+      renderNotes();
+    }
+  }
+
+  async function downloadOneByOne() {
+    const list = items.filter(isFinished);
+    const dl = await downloads();
+    if (!list.length || !dl || downloading) return;
+    downloading = true;
+    dlProblem = null;
+    renderActions();
+    renderNotes();
+    let saved = 0;
+    try {
+      for (let i = 0; i < list.length; i++) {
+        const filename = list[i].outPath.replace(/\//g, '_');
+        toast(`Descargando ${nf0.format(i + 1)} de ${nf0.format(list.length)}: ${filename}`);
+        let ok = false;
+        for (let attempt = 1; ; attempt++) {
+          try { await dl.save({ filename, data: list[i].outBlob }); ok = true; break; }
+          catch (e) {
+            if (e && e.code === 'rate_limited' && attempt <= 5) { await sleep(1500 * attempt); continue; }
+            handleSaveError(e, 'file');
+            break;
+          }
+        }
+        if (!ok) break;
+        saved++;
+      }
+    } finally {
+      downloading = false;
+      renderActions();
+      renderNotes();
+      toast(saved === list.length
+        ? `Descargadas ${plural(saved, 'imagen', 'imágenes')}.`
+        : `Se descargaron ${nf0.format(saved)} de ${nf0.format(list.length)} imágenes.`);
+    }
+  }
+
+  async function saveToFolder() {
+    const list = items.filter(isFinished);
+    if (!list.length) return;
+    let dir;
+    try { dir = await window.showDirectoryPicker({ id: 'compresor-salida', mode: 'readwrite' }); }
+    catch (e) {
+      if (e && e.name !== 'AbortError') toast('No se pudo abrir la carpeta de destino.', 'bad');
+      return;
+    }
+    const btn = $('#folderBtn');
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    try {
+      const target = await dir.getDirectoryHandle(outFolder(), { create: true });
+      for (const it of list) {
+        const parts = it.outPath.split('/');
+        let d = target;
+        for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p, { create: true });
+        const fh = await d.getFileHandle(parts[parts.length - 1], { create: true });
+        const w = await fh.createWritable();
+        await w.write(it.outBlob);
+        await w.close();
+      }
+      toast(`Guardadas ${plural(list.length, 'imagen', 'imágenes')} en ${dir.name}/${outFolder()}`);
+    } catch {
+      toast('No se pudieron guardar las imágenes en esa carpeta. Revisa los permisos.', 'bad');
+    } finally {
+      btn.textContent = 'Guardar en carpeta…';
+      renderActions();
+    }
+  }
+
+  // --- Interfaz ---
+  function showReading(on) {
+    $('#dropReading').hidden = !on;
+    if (on) { $('#dropEmpty').hidden = true; $('#dropLoaded').hidden = true; }
+  }
+
+  function renderSource() {
+    const has = items.length > 0;
+    $('#dropEmpty').hidden = has;
+    $('#dropLoaded').hidden = !has;
+    $('#clearBtn').hidden = !has;
+    $('#pickDirBtn').disabled = running;
+    $('#pickFilesBtn').disabled = running;
+    $('#clearBtn').disabled = running;
+    if (has) {
+      $('#srcName').textContent = rootName;
+      const total = items.reduce((a, it) => a + it.file.size, 0);
+      const dirs = new Set(items.map((it) => it.rel.slice(0, -1).join('/')).filter(Boolean)).size;
+      $('#srcMeta').textContent = `${plural(items.length, 'imagen', 'imágenes')} · ${fmtBytes(total)}${dirs ? ` · ${plural(dirs, 'subcarpeta', 'subcarpetas')}` : ''}`;
+    }
+  }
+
+  function renderSettings() {
+    $('#quality').value = settings.quality;
+    $('#qualityOut').textContent = settings.quality;
+    for (const c of $$('[data-q]')) c.setAttribute('aria-pressed', String(Number(c.dataset.q) === settings.quality));
+    const mw = $('#maxWidth');
+    if (document.activeElement !== mw) mw.value = settings.maxWidth || '';
+    for (const c of $$('[data-w]')) c.setAttribute('aria-pressed', String((Number(c.dataset.w) || null) === (settings.maxWidth || null)));
+    $('#fmtJpeg').checked = settings.format === 'jpeg';
+    $('#fmtWebp').checked = settings.format === 'webp';
+    $('#fmtWebp').disabled = !canWebp;
+    if (!canWebp) $('#fmtHelp').textContent = 'Este navegador no puede generar WebP; usa Chrome, Edge o Firefox para esa opción.';
+    $('#nameFlat').checked = settings.naming === 'flat';
+    $('#nameTree').checked = settings.naming === 'tree';
+    $('#keepIfLarger').checked = settings.keepIfLarger;
+    renderNamingExamples();
+    renderCli();
+  }
+
+  function renderNamingExamples() {
+    const it = viewItems().find((i) => i.rel.length > 1) || viewItems()[0];
+    const ext = settings.format === 'webp' ? '.webp' : '.jpg';
+    const show = (naming) => {
+      const p = outPathFor(it, naming, ext);
+      return `${outFolder()}/${p.dir ? p.dir + '/' : ''}${p.base}${ext}`;
+    };
+    $('#exFlat').textContent = show('flat');
+    $('#exTree').textContent = show('tree');
+  }
+
+  function renderCli() {
+    const root = isExample() ? EXAMPLE_ROOT : rootName;
+    const q = (p) => `"${p.replace(/"/g, '\\"')}"`;
+    $('#cli').textContent = `./CompresorImagenes ${q(root)} ${q(root + '-compressed')} ${settings.quality}${settings.maxWidth ? ' ' + settings.maxWidth : ''}`;
+    $('#cliNote').hidden = settings.format === 'jpeg' && settings.naming === 'flat';
+  }
+
+  function renderRunButton() {
+    const b = $('#runBtn');
+    b.classList.toggle('stop', running);
+    if (running) { b.disabled = cancelRequested; b.textContent = cancelRequested ? 'Deteniendo…' : 'Detener'; return; }
+    b.disabled = items.length === 0;
+    if (!items.length) { b.textContent = 'Carga una carpeta'; return; }
+    const again = items.some((i) => i.status !== 'pending');
+    b.textContent = again ? 'Comprimir de nuevo' : `Comprimir ${plural(items.length, 'imagen', 'imágenes')}`;
+  }
+
+  function renderActions() {
+    const fin = items.filter(isFinished).length;
+    const zip = $('#zipBtn');
+    zip.disabled = running || downloading || fin === 0 || noDownloadsHere();
+    if (!downloading) zip.textContent = 'Descargar ZIP';
+    const folder = $('#folderBtn');
+    folder.hidden = !canPickFolder;
+    folder.disabled = running || fin === 0;
+  }
+
+  function renderStats() {
+    const list = viewItems();
+    const fin = list.filter(isFinished);
+    const before = list.reduce((a, it) => a + sizeOf(it), 0);
+    const finBefore = fin.reduce((a, it) => a + sizeOf(it), 0);
+    const after = fin.reduce((a, it) => a + outSizeOf(it), 0);
+    const errors = list.filter((i) => i.status === 'error').length;
+    const processed = list.filter((i) => i.status !== 'pending' && i.status !== 'working').length;
+
+    $('#statCount').textContent = nf0.format(list.length);
+    $('#statCountSub').textContent = fin.length && fin.length !== list.length ? `${nf0.format(fin.length)} listas` : '';
+    $('#statBefore').textContent = fmtBytes(before);
+    $('#statBeforeSub').textContent = list.length ? `prom. ${fmtBytes(before / list.length)}` : '';
+    $('#statAfter').textContent = fin.length ? fmtBytes(after) : '—';
+    $('#statAfterSub').textContent = fin.length ? `prom. ${fmtBytes(after / fin.length)}` : '';
+    if (fin.length && finBefore > 0) {
+      const saved = 1 - after / finBefore;
+      $('#statSaved').textContent = `${nf0.format(Math.round(saved * 100))}%`;
+      $('#statSavedSub').textContent = `${fmtBytes(Math.max(0, finBefore - after))} menos`;
+    } else {
+      $('#statSaved').textContent = '—';
+      $('#statSavedSub').textContent = '';
+    }
+
+    const et = $('#errorsTag');
+    et.hidden = errors === 0;
+    et.textContent = plural(errors, 'error', 'errores');
+
+    const prog = $('#progress');
+    prog.hidden = !running;
+    if (running) {
+      $('#progressBar').style.width = `${(processed / list.length) * 100}%`;
+      $('#progressText').textContent = `${nf0.format(processed)} de ${nf0.format(list.length)}`;
+    }
+  }
+
+  function renderNotes() {
+    const ex = isExample();
+    $('#exampleTag').hidden = !ex;
+    $('#exampleNote').hidden = !ex;
+    const stale = !ex && !running && lastRunKey !== null && lastRunKey !== runKey(settings) && items.some(isFinished);
+    $('#staleNote').hidden = !stale;
+    const ig = $('#ignoredNote');
+    ig.hidden = ex || ignored === 0;
+    ig.textContent = ignored === 1
+      ? 'Se ignoró 1 archivo que no es JPG, PNG o WebP.'
+      : `Se ignoraron ${nf0.format(ignored)} archivos que no son JPG, PNG o WebP.`;
+    let p = dlProblem;
+    if (noDownloadsHere()) {
+      if (dlPerm === 'granted') p = { text: 'Descargas permitidas. Recarga la página para activarlas.', reload: true };
+      else if (dlPerm === 'denied' || dlPerm === 'prompt') p = { text: 'Las descargas están desactivadas para esta página. Actívalas para poder bajar el ZIP.', enable: true };
+      else p = { text: `${DL_NONE} (permiso: ${dlPerm || 'sin respuesta'})`, openTab: true };
+    }
+    $('#dlNote').hidden = !p;
+    if (p) {
+      $('#dlNoteText').textContent = p.text;
+      $('#dlOneByOne').hidden = !p.oneByOne || downloading || !items.some(isFinished);
+      $('#dlOpenTab').hidden = !p.openTab;
+      $('#dlEnable').hidden = !p.enable;
+      $('#dlReload').hidden = !p.reload;
+    }
+  }
+
+  function buildRow(it) {
+    const li = document.createElement('li');
+    li.className = 'row';
+    li.innerHTML =
+      '<button type="button" class="thumb" disabled></button>' +
+      '<div class="names"><span class="out"></span><span class="in"></span></div>' +
+      '<div class="sizes"><span class="sz"></span><span class="bar"><i></i></span></div>' +
+      '<span class="pill"></span>';
+    li.querySelector('.thumb').addEventListener('click', () => openCompare(it));
+    rowEls.set(it.id, li);
+    updateRow(it);
+    return li;
+  }
+
+  function updateRow(it) {
+    const li = rowEls.get(it.id);
+    if (!li) return;
+    const thumb = li.querySelector('.thumb');
+    const canCompare = !!(it.thumbUrl && isFinished(it));
+    if (it.thumbUrl) {
+      let img = thumb.querySelector('img');
+      if (!img) { thumb.textContent = ''; img = document.createElement('img'); img.alt = ''; thumb.append(img); }
+      if (img.getAttribute('src') !== it.thumbUrl) img.src = it.thumbUrl;
+    } else {
+      thumb.innerHTML = '';
+      const ph = document.createElement('span');
+      ph.className = 'thumb-ph';
+      ph.textContent = extOf(it.rel[it.rel.length - 1]).slice(1);
+      thumb.append(ph);
+    }
+    thumb.disabled = !canCompare;
+    if (canCompare) thumb.setAttribute('aria-label', `Comparar antes y después: ${it.outPath}`);
+    else thumb.removeAttribute('aria-label');
+
+    li.querySelector('.out').textContent = it.outPath;
+    const inEl = li.querySelector('.in');
+    const src = it.rel.join('/');
+    inEl.classList.toggle('err', it.status === 'error');
+    if (it.status === 'error') inEl.textContent = `${src} · ${it.err}`;
+    else if (it.status === 'kept') inEl.textContent = `${src} · comprimida pesaba ${fmtBytes(it.encodedSize)}, se dejó el original`;
+    else if (it.inW && it.outW) inEl.textContent = `${src} · ${it.inW}×${it.inH} → ${it.outW}×${it.outH}`;
+    else inEl.textContent = src;
+
+    const sz = li.querySelector('.sz');
+    const bar = li.querySelector('.bar');
+    const fill = bar.querySelector('i');
+    const pill = li.querySelector('.pill');
+    pill.className = 'pill';
+    bar.classList.remove('warn');
+    if (isFinished(it)) {
+      const a = sizeOf(it), b = outSizeOf(it);
+      sz.textContent = `${fmtBytes(a)} → ${fmtBytes(b)}`;
+      fill.style.width = `${Math.min(100, (b / a) * 100)}%`;
+      if (it.status === 'kept') { pill.textContent = 'Original'; pill.classList.add('warn'); bar.classList.add('warn'); }
+      else if (b > a) { pill.textContent = `+${nf0.format(Math.round((b / a - 1) * 100))}%`; pill.classList.add('warn'); bar.classList.add('warn'); }
+      else { pill.textContent = `−${nf0.format(Math.round((1 - b / a) * 100))}%`; pill.classList.add('good'); }
+    } else {
+      sz.textContent = fmtBytes(sizeOf(it));
+      fill.style.width = '0';
+      const labels = { pending: 'En cola', working: 'Procesando', error: 'Error', skipped: 'Omitida' };
+      pill.textContent = labels[it.status] || '';
+      if (it.status === 'working') pill.classList.add('busy');
+      if (it.status === 'error') pill.classList.add('bad');
+    }
+  }
+
+  function renderRows() {
+    const ul = $('#rows');
+    rowEls.clear();
+    ul.replaceChildren(...viewItems().map(buildRow));
+  }
+
+  function renderAll() {
+    renderSource();
+    renderSettings();
+    renderRunButton();
+    renderActions();
+    renderNotes();
+    renderStats();
+    renderRows();
+  }
+
+  function refreshNames() {
+    assignNames();
+    for (const it of viewItems()) updateRow(it);
+    renderNamingExamples();
+    renderCli();
+  }
+
+  let toastTimer = null;
+  function toast(msg, kind) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.className = 'toast' + (kind ? ' ' + kind : '');
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 4200);
+  }
+
+  // --- Comparador antes / después ---
+  const dlg = $('#cmp');
+  const stage = $('#stage');
+  let cmpUrls = [];
+  function setPos(p) { stage.style.setProperty('--pos', `${p}%`); $('#cmpPos').value = p; }
+  function openCompare(it) {
+    if (!isFinished(it) || !it.file) return;
+    cmpUrls.forEach(URL.revokeObjectURL);
+    cmpUrls = [URL.createObjectURL(it.file), URL.createObjectURL(it.outBlob)];
+    $('#imgBefore').src = cmpUrls[0];
+    $('#imgAfter').src = cmpUrls[1];
+    $('#cmpTitle').textContent = it.outPath;
+    $('#cmpA').textContent = `· ${fmtBytes(sizeOf(it))} · ${it.inW}×${it.inH}`;
+    $('#cmpB').textContent = `· ${fmtBytes(outSizeOf(it))} · ${it.outW}×${it.outH}`;
+    stage.style.setProperty('--ar', `${it.outW} / ${it.outH}`);
+    stage.style.setProperty('--arn', String(it.outW / it.outH));
+    stage.style.setProperty('--real-w', `${it.outW}px`);
+    stage.classList.toggle('real', $('#cmpReal').checked);
+    setPos(50);
+    dlg.showModal();
+  }
+  dlg.addEventListener('close', () => {
+    cmpUrls.forEach(URL.revokeObjectURL);
+    cmpUrls = [];
+    $('#imgBefore').removeAttribute('src');
+    $('#imgAfter').removeAttribute('src');
+  });
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+  $('#cmpClose').addEventListener('click', () => dlg.close());
+  $('#cmpPos').addEventListener('input', (e) => setPos(Number(e.target.value)));
+  $('#cmpReal').addEventListener('change', (e) => stage.classList.toggle('real', e.target.checked));
+  let dragging = false;
+  function posFromEvent(e) {
+    const r = stage.getBoundingClientRect();
+    setPos(Math.round(Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100))));
+  }
+  stage.addEventListener('pointerdown', (e) => { dragging = true; stage.setPointerCapture(e.pointerId); posFromEvent(e); });
+  stage.addEventListener('pointermove', (e) => { if (dragging) posFromEvent(e); });
+  stage.addEventListener('pointerup', () => { dragging = false; });
+  stage.addEventListener('pointercancel', () => { dragging = false; });
+
+  // --- Eventos ---
+  function onSettingsChanged(namesChanged) {
+    saveSettings();
+    renderSettings();
+    renderNotes();
+    if (namesChanged) refreshNames();
+  }
+  $('#quality').addEventListener('input', (e) => { settings.quality = Number(e.target.value); onSettingsChanged(false); });
+  for (const c of $$('[data-q]')) c.addEventListener('click', () => { settings.quality = Number(c.dataset.q); onSettingsChanged(false); });
+  $('#maxWidth').addEventListener('input', (e) => {
+    const v = Math.round(Number(e.target.value));
+    settings.maxWidth = e.target.value === '' ? null : (v >= 16 ? v : settings.maxWidth);
+    onSettingsChanged(false);
+  });
+  $('#maxWidth').addEventListener('blur', () => renderSettings());
+  for (const c of $$('[data-w]')) c.addEventListener('click', () => { settings.maxWidth = Number(c.dataset.w) || null; onSettingsChanged(false); });
+  for (const r of $$('input[name="fmt"]')) r.addEventListener('change', () => { settings.format = r.value; onSettingsChanged(true); });
+  for (const r of $$('input[name="naming"]')) r.addEventListener('change', () => { settings.naming = r.value; onSettingsChanged(true); });
+  $('#keepIfLarger').addEventListener('change', (e) => { settings.keepIfLarger = e.target.checked; onSettingsChanged(false); });
+
+  $('#pickDirBtn').addEventListener('click', () => $('#pickDir').click());
+  $('#pickFilesBtn').addEventListener('click', () => $('#pickFiles').click());
+  $('#pickDir').addEventListener('change', (e) => { if (e.target.files.length) setSource(fromFileList(e.target.files)); e.target.value = ''; });
+  $('#pickFiles').addEventListener('change', (e) => { if (e.target.files.length) setSource(fromFileList(e.target.files)); e.target.value = ''; });
+  $('#clearBtn').addEventListener('click', () => { clearItems(); renderAll(); });
+  $('#runBtn').addEventListener('click', run);
+  $('#zipBtn').addEventListener('click', downloadZip);
+  $('#dlOneByOne').addEventListener('click', downloadOneByOne);
+  $('#dlEnable').addEventListener('click', enableDownloads);
+  $('#dlReload').addEventListener('click', () => location.reload());
+  $('#folderBtn').addEventListener('click', saveToFolder);
+  $('#cliCopy').addEventListener('click', () => {
+    const text = $('#cli').textContent;
+    const fallback = () => {
+      const range = document.createRange();
+      range.selectNodeContents($('#cli'));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      toast('Comando seleccionado: cópialo con ⌘C o Ctrl+C.');
+    };
+    try {
+      navigator.clipboard.writeText(text).then(() => toast('Comando copiado.'), fallback);
+    } catch { fallback(); }
+  });
+
+  // Arrastrar y soltar en cualquier parte de la página.
+  const drop = $('#drop');
+  let dragDepth = 0;
+  const hasFiles = (e) => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes('Files');
+  window.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; drop.classList.add('over'); });
+  window.addEventListener('dragleave', (e) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) drop.classList.remove('over'); });
+  window.addEventListener('dragover', (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = running ? 'none' : 'copy'; });
+  window.addEventListener('drop', async (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    drop.classList.remove('over');
+    if (running) { toast('Espera a que termine la compresión actual o detenla.'); return; }
+    showReading(true);
+    try {
+      const { records, name } = await fromDataTransfer(e.dataTransfer);
+      setSource(records, name);
+    } catch {
+      showReading(false);
+      renderSource();
+      toast('No se pudo leer lo que soltaste. Prueba con el botón “Elegir carpeta”.', 'bad');
+    }
+  });
+
+  renderAll();
+})();
+</script>
+</body></html>
